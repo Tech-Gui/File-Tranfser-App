@@ -1,0 +1,339 @@
+#dependencies 
+import socket
+import os
+import time
+import threading
+import math
+
+'''
+Thread class
+inheriting from the Thread class found in the threading module
+'''
+class server_thread(threading.Thread):
+    '''
+    class constructor
+    args : takes in the connection, address, database of the users, the current directory, IP address and port number
+    '''
+    def __init__(self, connection,address, users, dir,server_IP, server_Port):
+        #initializing the base class
+        threading.Thread.__init__(self)
+        self.connection = connection
+        self.address = address
+        self.server_IP = server_IP
+        self.server_Port = server_Port
+        self.dir = dir
+        self.current_dir = dir
+        self.rest = False
+        self.PASVmode = False
+        self.isLogged = False
+        self.users = users
+        self.isUser = False
+        self.isConnected = True
+        self.isList = False
+        self.mode = 'I'
+        self.can_delete = True
+
+
+    def run(self):
+        #The user is connected
+        self.isConnected = True
+        #response code
+        response = "code: 220"
+        #send response
+        self.sendResponse(response)
+        #Wait for connection from clients
+        while True:
+            command = self.connection.recv(256).decode()
+            '''
+            check if it is connected or not
+            if not, break
+            if it is connected, print the command and check if the command is recognized or not 
+            '''
+            if not command or not isConnected : 
+                break
+            else :
+                print('Recieved: ', command)
+                try:
+                    function = getattr(self, command[:4].strip().upper())
+                    function(command)
+                except Exception as err :
+                    print(f"Error: {err}")
+                    response = "code: 500, syntax error - command unrecognized"
+                    self.sendResponse(response)
+
+        # close the connection if thread is not connected     
+     
+        self.connection.send.close()
+    
+    # send the reposnse to the server   
+    def sendResponse(self, response):
+        self.connection.send((response + "\r\n").encode())
+    
+    # sends a response if the user is not logged in
+    def not_logged_in(self):
+        response = 'code: 530, please login with the username and password'
+        self.sendResponse(response)
+    
+    # sends a response if the parameters are not correct
+    def invalid_parameters(self, command):
+        response = f"code: 501, \ {command[:-2]} \ : parameters not understood"
+        self.sendResponse(response)
+
+    # reset the state of affairs
+    def reset_state(self):
+        self.isLogged = False
+        self.isUser = False
+        self.user = None
+
+    # sends a reposnse of the system tpe
+    def system(self, command):
+        response = "215 UNIX Type: L8"
+        self.sendResponse(response)
+    
+    # check if the username is valid or not
+    def user(self, command):
+        # resets the state of the user
+        self.reset_state()
+
+        # get the username from the command
+        self.user = command[5:-2]
+
+        # get the users
+        users = open(self.users, 'r').read()
+
+        # check if the user is there in the users list
+        for user in users.split('\n'):
+            if self.user == user.split(" ")[0] and len(user.split(" ")[0]) != 0:
+                self.isUser = True
+                response = "code: 331, username correct, need password"
+                self.sendResponse(response)
+                break
+
+        if not self.isUser:
+            response = "code: 530, Username does not exist"
+            self.sendResponse(response)
+            self.isUser = False
+
+    # check if the password is correct or not
+    def password(self, command):
+        # check if the usename is entered
+        if self.isUser:
+            password = command[5:-2]
+            passwords = open(self.users, 'r').read()
+
+            # check if  password matches with the username entered
+            for passkey in passwords.split('\n'):
+                if password == passkey.split(' ')[1] and self.user == passkey.split(' ')[0]:
+                    response = "code: 230, User logged in successfully"
+                    self.sendResponse(response)
+                    break
+            
+            if not self.isLogged:
+                response = f"code: 530, Invalid password for {self.user}"
+                self.sendResponse(response)
+        else :
+            self.not_logged_in()
+
+    # Logging out
+    def logout(self, command):
+
+        #if the user has logged in, log them out
+        if self.isLogged:
+            self.reset_state()
+            response = "code: 221, Successfully logged out"
+            self.sendResponse(response)
+        else :
+            response = "code: 221, Service closing control connection"
+            self.sendResponse(response)
+            self.isConnected = False
+    
+    def STRU(self, command):
+        stru = command[5]
+
+        if stru == 'F':
+            response = "code: 200, F"
+        else :
+            response = "code: 504, Command obselete"
+
+        self.sendResponse(response)
+    
+    # streaming mode
+    def stream_mode(self, command):
+        _mode = command[5]
+
+        if _mode == 'S':
+            response = "code: 200, Mode set to stream"
+        else :
+            response = "code: 504, Command obselete"
+        
+        self.sendResponse(response)
+
+    # check if the connection is established or not
+    def is_alive(self):
+        if self.is_alive():
+            response = "code: 200, Connection established"
+        else :
+            response = "code: 400, There is no connection established"
+        
+        self.sendResponse(response)
+
+    # choosing modes
+    def modes(self, command):
+        _mode = command[5]
+
+        #check the type of mode 
+        if _mode.upper() == 'I':
+            self.mode = _mode
+            response = "code: 200, Binary mode"
+            self.sendResponse(response)
+        elif _mode.upper() == 'A':
+            self.mode = _mode
+            response = "code: 200, ASCII mode" 
+            self.sendResponse(response)
+        else :
+            # unkown mode 
+            self.invalid_parameters(command)
+    
+    # current working directory
+    def pwd(self, command):
+        #check if the user is looged in
+        if self.isLogged:
+            #relative path to the root directory
+            _dir = '/' + self.current_dir
+            current_dir = os.path.relpath(_dir,'/')
+
+            if current_dir == '.':
+                current_dir = '/'
+            else :
+                current_dir = '/' + current_dir
+            
+            response = f"code: 257, '{current_dir}' is the current directory."
+            self.sendResponse(response)
+
+        else :
+            self.not_logged_in()
+
+    # current directory
+    def cwd(self, command):
+        # check if the user has logged in 
+        if self.isLogged :
+            #get the current directory
+            temp_dir = command[4:-2]
+
+            #check if it is the base directory
+            if temp_dir == '.' or temp_dir == '/':
+                self.current_dir = self.directory
+                response = "code: 250, Ok"
+                self.sendResponse(response)
+            else:
+                if temp_dir[0] == '/':
+                    temp_dir = temp_dir[1:]
+
+                new_dir = os.path.join(self.current_dir, temp_dir)
+
+                # does the directory exist
+                if os.path.exists(new_dir):
+                    self.current_dir = new_dir
+                    response = "code: 250, Ok"
+                    self.sendResponse(response)
+                else :
+                    response = "code: 550, path does not exist"
+                    self.sendResponse(response)
+        else :
+            self.not_logged_in()
+
+    def passive_mode(self,command):
+        # check if the user is logged in
+        if self.is_logged_in():
+            self.PASVmode = True
+
+            self.serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.serverSocket.bind(self.server_IP, 0)
+            self.serverSocket.listen(1)
+
+            ip, port = self.serverSocket.getsockname()
+
+            ip = ip.split('.')
+            ip = ','.join(ip)
+
+            p1 = math.floor(port/256)
+            p2 = port % 256
+            print(f"open...\nIP: {ip} \nPORT: {port}")
+
+            response = f"code: 227, Passive mode ( {ip}, {p1}, {p2})."
+            self.sendResponse(response)
+
+        else :
+            self.not_logged_in()
+'''
+FTP server class
+inheriting from the thread class from the threading module
+acts as a lookout class
+waits for the connection from the clients
+'''
+class Server(threading.Thread):
+    '''
+    class constructor
+    takes in the users, home directory, IP address and the port number of the client
+    '''
+    def __init__(self, users, home_directory, IP, Port):
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_IP = IP
+        self.server_Port = Port
+        self.socket.bind(self.server_IP, self.server_Port)
+        self.users = users
+        self.home_directory = home_directory
+        #initializing the base class
+        threading.Thread.__init__(self)
+    
+
+    '''
+    called by the start method in the base class
+    an entry point for the threads
+    '''
+    def run(self):
+        self.socket.listen(5)
+        while True:
+            connection, address = self.socket.accept()
+            #create a new thread
+            thread = Server_thread(connection, address, self.users, self.home_directory, self.server_IP, self.server_Port)
+            thread.deamon = True
+            #start the thread
+            thread.run()
+            
+    # stop the server
+    def stop(self):
+        self.socket.close()
+
+
+'''
+start the application
+'''
+def Start():
+    #port number
+    server_Port = 21
+
+    server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    #conenct to the Google DNS
+    server.connect("8.8.8.8", 80)
+    #get the IP addres of the serve 
+    server_IP = server.getsockname()[0]
+
+    #get users 
+    users = './users.txt'
+
+    #Home directory
+    home_directory = '../'
+
+    # create threars for each client
+
+    Thread = Server(users, home_directory, server_IP, server_Port)
+    Thread.daemon = True
+    Thread.start()
+
+    # wait for clients to initiate connection
+    print(f"File Transfer Application running on {server_IP} : {server_Port}")
+    print("Press enter to stop...")
+    Thread.stop()
+
+Start()
