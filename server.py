@@ -265,6 +265,97 @@ class server_thread(threading.Thread):
 
         else :
             self.not_logged_in()
+    
+    def PORT(self, command):
+        # check if the user is looged in
+        if self.isLogged:
+            # check if passive mode 
+            if self.PASVmode:
+                self.serverSocket.close()
+                self.PASVmode = False
+            
+            # split the connection settings
+            connection_settings = command[5:].split(',')
+
+            # generate the IP address from the connection settings
+            self.DTP_address = '.'.join(connection_settings[:4])
+
+            # Generate the port from the connection settings 
+            self.DTP_port = (
+                (int(connection_settings[4]) << 8) + int(connection_settings[5])
+            )
+
+            print(f"Connected to : {self.DTP_address} {self.DTP_port}")
+
+            response = " code: 200, Ok."
+            self.sendResponse(response)
+
+            self.DTP_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.DTP_socket.connect((self.DTP_address, self.DTP_port))
+        else :
+            self.not_logged_in()
+    
+    def start_DTP_socket(self):
+        try:
+            if self.PASVmode:
+                self.DTP_socket, address = self.serverSocket.accept()
+                print(f"connect:  {address}")
+        except socket.error:
+            response = "code: 425, Cannot open data connection"
+            self.sendResponse(response)
+
+    def stop_DTP_socket(self):
+        self.DTP_socket.close()
+        if self.PASVmode:
+            self.serverSocket.close()
+    
+    def send_data(self, data):
+        # check mode of sending
+        if not self.isList and self.mode == 'I':
+            self.DTP_socket.send(data)
+        else :
+            self.DTP_socket.send((data + '\r\n').encode())
+
+    def List(self, command):
+        # check if the user is logged in
+        if self.isLogged:
+            response = "code: 150, File status okay, about to open connection."
+            self.sendResponse(response)
+            print(f"list: {self.current_dir}")
+
+            #prepare the socket for data transfer
+            self.start_DTP_socket()
+
+            # get each file in the directory
+            for file in os.listdir(self.current_dir):
+                file_list = self.to_list(os.path.join(self.current_dir, file))
+                #send a string
+                self.isList = True
+                self.send_data(file_list)
+                self.isList = False
+            
+            # Done sending the data
+            self.stop_DTP_socket()
+
+            response = "code: 200, Listing completed successfully"
+            self.sendResponse(response)
+        
+        else :
+            self.not_logged_in()
+
+    def to_list(self, file):
+        # get the status of the file
+        status = os.stat(file)
+        fullmode = 'rwxrwxrwx'
+        mode = ''
+
+        for i in range(9):
+            mode += ((status.st_mode >> (8 - i)) & i) and fullmode[i] or '-'
+
+        d = (os.path.isdir(file)) and 'd' or '-'
+        file_histor = time.strftime(' %b %d %H:%M', time.gmtime(status.st_mtime))
+        return d + mode + '\t1 user' + '\t group \t\t' + str(status.st_size)
+    
 '''
 FTP server class
 inheriting from the thread class from the threading module
