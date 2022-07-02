@@ -158,7 +158,7 @@ class server_thread(threading.Thread):
         self.sendResponse(response)
     
     # streaming mode
-    def stream_mode(self, command):
+    def STRU(self, command):
         _mode = command[5]
 
         if _mode == 'S':
@@ -178,7 +178,7 @@ class server_thread(threading.Thread):
         self.sendResponse(response)
 
     # choosing modes
-    def modes(self, command):
+    def TYPE(self, command):
         _mode = command[5]
 
         #check the type of mode 
@@ -195,7 +195,7 @@ class server_thread(threading.Thread):
             self.invalid_parameters(command)
     
     # current working directory
-    def pwd(self, command):
+    def PWD(self, command):
         #check if the user is looged in
         if self.isLogged:
             #relative path to the root directory
@@ -214,7 +214,7 @@ class server_thread(threading.Thread):
             self.not_logged_in()
 
     # current directory
-    def cwd(self, command):
+    def CWD(self, command):
         # check if the user has logged in 
         if self.isLogged :
             #get the current directory
@@ -242,7 +242,7 @@ class server_thread(threading.Thread):
         else :
             self.not_logged_in()
 
-    def passive_mode(self,command):
+    def PASV(self,command):
         # check if the user is logged in
         if self.is_logged_in():
             self.PASVmode = True
@@ -355,7 +355,118 @@ class server_thread(threading.Thread):
         d = (os.path.isdir(file)) and 'd' or '-'
         file_histor = time.strftime(' %b %d %H:%M', time.gmtime(status.st_mtime))
         return d + mode + '\t1 user' + '\t group \t\t' + str(status.st_size)
+
+    #make directory
+    def MKD(self, command):
+        #check if the user had logged in       
+        if self.isLogged:
+            directory_name = os.path.join(self.current_dir, command[4:-2])
+            os.mkdir(directory_name)
+            response = "code: 257, Directory created."
+            self.sendResponse(response)
+        else :
+            self.not_logged_in()
     
+    # delete directory
+    def RMD(self, command):
+        #check if the user had logged
+        if self.isLogged:
+            directory_name = os.path.join(self.current_dir, command[4:-2])
+            #vcheck if the path exists
+            if os.path.exists(directory_name):
+                #delete if only delete is enabled
+                if self.can_delete:
+                    os.rmdir(directory_name)
+                    response = "code: 250, Directory deleted."
+                    self.sendResponse(response)
+                else:
+                    response = "code: 450, Delete not allowed."
+                    self.sendResponse(response)
+            else:
+                response = "code: 550, Directory not found."
+                self.sendResponse(response)
+        else:
+            self.not_logged_in()
+
+    # storing files 
+    def STOR(self, command):
+        # check if the user is looged in
+        if self.isLogged:
+            #create the file path
+            filename = os.path.join(self.current_dir, command[5:-2])
+            print(f'Uploading: {filename}')
+
+            #upload modes
+            if self.mode == 'I':
+                file = open(filename, 'wb')
+            else :
+                file = open(filename, 'w')
+            
+            response = "code: 150, Opening data connection."
+            self.sendResponse(response)
+
+            #prepare the socket for uploading 
+            self.start_DTP_socket()
+
+            #fetch the file contents
+            while True:
+                data = self.DTP_socket.recv(8192)
+                if not data:
+                    break
+                file.write(data)
+            
+            # done storing the file 
+            self.stop_DTP_socket()
+            response = "code: 226, Transfer complete."
+            self.sendResponse(response)
+            print(f'Upload success.')
+            file.close()
+
+        else :
+            self.not_logged_in()
+    
+    def RETR(self, command):
+        # check if the user is logged in
+        if self.is_logged_in():
+            filename = os.path.join(self.current_dir, command[5:-2])
+
+            # for Filezilla
+            if filename[0] == '/':
+                filename = filename[1:]
+            
+            # check if file exists
+            if os.path.exists(filename):
+                print(f"Downloading {filename}.")
+
+                #mode
+                if self.mode == 'I':
+                    file = open(filename, 'rb')
+                else:
+                    file = open(filename, 'r')
+                
+                # open data connection
+                response = "code: 150, Opening file data connection."
+                self.sendResponse(response)
+
+                data = file.read(8192)
+                self.start_DTP_socket()
+
+                # sending the file
+                while True:
+                    self.send_data(data)
+                    data = file.read(8192)
+                file.close()
+                self.stop_DTP_socket()
+                response = "code: 226, Transfer successful."
+                self.sendResponse(response)
+            else:
+                # file does not exist
+                response = "code: 550, File does not exist."
+                self.sendResponse(response)
+        else:
+            self.not_logged_in()
+        
+
 '''
 FTP server class
 inheriting from the thread class from the threading module
