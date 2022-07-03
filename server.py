@@ -21,8 +21,8 @@ class server_thread(threading.Thread):
         self.address = address
         self.server_IP = server_IP
         self.server_Port = server_Port
-        self.dir = dir
-        self.current_dir = dir
+        self.dir = dir  #base directory
+        self.current_dir = dir # initialise current dir as base dir
         self.rest = False
         self.PASVmode = False
         self.isLogged = False
@@ -49,7 +49,7 @@ class server_thread(threading.Thread):
             if not, break
             if it is connected, print the command and check if the command is recognized or not 
             '''
-            if not command or not isConnected : 
+            if not command or not self.isConnected : 
                 break
             else :
                 print('Recieved: ', command)
@@ -63,7 +63,7 @@ class server_thread(threading.Thread):
 
         # close the connection if thread is not connected     
      
-        self.connection.send.close()
+        self.connection.close()
     
     # send the reposnse to the server   
     def sendResponse(self, response):
@@ -91,7 +91,7 @@ class server_thread(threading.Thread):
         self.sendResponse(response)
     
     # check if the username is valid or not
-    def user(self, command):
+    def USER(self, command):
         # resets the state of the user
         self.reset_state()
 
@@ -115,7 +115,7 @@ class server_thread(threading.Thread):
             self.isUser = False
 
     # check if the password is correct or not
-    def password(self, command):
+    def PASS(self, command):
         # check if the usename is entered
         if self.isUser:
             password = command[5:-2]
@@ -126,6 +126,7 @@ class server_thread(threading.Thread):
                 if password == passkey.split(' ')[1] and self.user == passkey.split(' ')[0]:
                     response = "code: 230, User logged in successfully"
                     self.sendResponse(response)
+                    self.isLogged = True
                     break
             
             if not self.isLogged:
@@ -222,7 +223,7 @@ class server_thread(threading.Thread):
 
             #check if it is the base directory
             if temp_dir == '.' or temp_dir == '/':
-                self.current_dir = self.directory
+                self.current_dir = self.dir
                 response = "code: 250, Ok"
                 self.sendResponse(response)
             else:
@@ -244,11 +245,11 @@ class server_thread(threading.Thread):
 
     def PASV(self,command):
         # check if the user is logged in
-        if self.is_logged_in():
+        if self.isLogged:
             self.PASVmode = True
 
             self.serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.serverSocket.bind(self.server_IP, 0)
+            self.serverSocket.bind((self.server_IP, 0))
             self.serverSocket.listen(1)
 
             ip, port = self.serverSocket.getsockname()
@@ -258,9 +259,9 @@ class server_thread(threading.Thread):
 
             p1 = math.floor(port/256)
             p2 = port % 256
-            print(f"open...\nIP: {ip} \nPORT: {port}")
+            print('open...\nIP: ' + str(ip) +'\nPORT: '+ str(port))
 
-            response = f"code: 227, Passive mode ( {ip}, {p1}, {p2})."
+            response = '227 Entering Passive Mode (' + str(ip) + ',' + str(p1) + ',' +str(p2) + ').'
             self.sendResponse(response)
 
         else :
@@ -281,9 +282,7 @@ class server_thread(threading.Thread):
             self.DTP_address = '.'.join(connection_settings[:4])
 
             # Generate the port from the connection settings 
-            self.DTP_port = (
-                (int(connection_settings[4]) << 8) + int(connection_settings[5])
-            )
+            self.DTP_port = ((int(connection_settings[4]) << 8)) + int(connection_settings[5])
 
             print(f"Connected to : {self.DTP_address} {self.DTP_port}")
 
@@ -316,7 +315,7 @@ class server_thread(threading.Thread):
         else :
             self.DTP_socket.send((data + '\r\n').encode())
 
-    def List(self, command):
+    def LIST(self, command):
         # check if the user is logged in
         if self.isLogged:
             response = "code: 150, File status okay, about to open connection."
@@ -427,7 +426,7 @@ class server_thread(threading.Thread):
     
     def RETR(self, command):
         # check if the user is logged in
-        if self.is_logged_in():
+        if self.isLogged():
             filename = os.path.join(self.current_dir, command[5:-2])
 
             # for Filezilla
@@ -452,7 +451,7 @@ class server_thread(threading.Thread):
                 self.start_DTP_socket()
 
                 # sending the file
-                while True:
+                while data:
                     self.send_data(data)
                     data = file.read(8192)
                 file.close()
@@ -472,70 +471,125 @@ FTP server class
 inheriting from the thread class from the threading module
 acts as a lookout class
 waits for the connection from the clients
-'''
-class Server(threading.Thread):
-    '''
-    class constructor
-    takes in the users, home directory, IP address and the port number of the client
-    '''
-    def __init__(self, users, home_directory, IP, Port):
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_IP = IP
-        self.server_Port = Port
-        self.socket.bind(self.server_IP, self.server_Port)
-        self.users = users
-        self.home_directory = home_directory
-        #initializing the base class
-        threading.Thread.__init__(self)
+# '''
+# class Server(threading.Thread):
+#     '''
+#     class constructor
+#     takes in the users, home directory, IP address and the port number of the client
+#     '''
+#     def __init__(self, users, home_directory, server_IP, server_Port):
+#         self.socket1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+#         self.server_IP = server_IP
+#         self.server_Port = server_Port
+#         self.socket1.bind((self.server_IP, self.server_Port))
+#         self.users = users
+#         self.home_directory = home_directory
+#         #initializing the base class
+#         threading.Thread.__init__(self)
     
 
-    '''
-    called by the start method in the base class
-    an entry point for the threads
-    '''
-    def run(self):
-        self.socket.listen(5)
-        while True:
-            connection, address = self.socket.accept()
-            #create a new thread
-            thread = Server_thread(connection, address, self.users, self.home_directory, self.server_IP, self.server_Port)
-            thread.deamon = True
-            #start the thread
-            thread.run()
+#     '''
+#     called by the start method in the base class
+#     an entry point for the threads
+#     '''
+#     def run(self):
+#         self.socket1.listen(5)
+#         while True:
+#             connection, address = self.socket1.accept()
+#             #create a new thread
+#             thread = server_thread(connection, address, self.users, self.home_directory, self.server_IP, self.server_Port)
+#             thread.daemon = True
+#             #start the thread
+#             thread.start()
             
-    # stop the server
+#     # stop the server
+#     def stop(self):
+#         self.socket1.close()
+
+class FTPserver(threading.Thread):
+
+    # The lookout class, waits for contact from client
+
+    def __init__(self, users, home_directory, server_IP, server_Port):
+        self.sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+        self.serverIP = server_IP
+        self.serverPort =  server_Port
+        self.sock.bind((self.serverIP, self.serverPort))
+        self.usersDB = users
+        self.homeDir = home_directory
+        threading.Thread.__init__(self)
+    
+    def run(self):
+        self.sock.listen(5)
+        while True:
+            connectionSocket, addr = self.sock.accept()
+            thread = server_thread(connectionSocket, addr,self.usersDB, self.homeDir,self.serverIP,self.serverPort)
+            thread.daemon = True
+            thread.start()
+    
     def stop(self):
-        self.socket.close()
-
-
+        self.sock.close()
 '''
 start the application
 '''
+# def Start():
+#     #port number
+#     server_Port = 21
+
+#     server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+#     
+#     server.connect(("8.8.8.8", 80))
+#     #get the IP addres of the serve 
+#     server_IP = server.getsockname()[0]
+
+#     #get users 
+#     users = './users.txt'
+
+#     #Home directory
+#     home_directory = '../'
+
+#     # create threars for each client
+
+#     cThread = Server(users, home_directory, server_IP, server_Port)
+#     cThread.daemon = True
+#     cThread.start()
+
+#     # wait for clients to initiate connection
+#     print(f"File Transfer Application running on {server_IP} : {server_Port}")
+#     print("Press enter to stop...")
+#     cThread.stop()
+
+# Start()
+
 def Start():
-    #port number
-    server_Port = 21
+    
+    serverPort = 21
 
-    server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    server =  socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     #conenct to the Google DNS
-    server.connect("8.8.8.8", 80)
-    #get the IP addres of the serve 
-    server_IP = server.getsockname()[0]
+    server.connect(("8.8.8.8", 80))
 
-    #get users 
+     # get user 
     users = './users.txt'
+    #get IP address
+    serverIP = server.getsockname()[0]
 
-    #Home directory
-    home_directory = '../'
+   
 
-    # create threars for each client
+    # Default directory
+    homeDir = '../'
 
-    Thread = Server(users, home_directory, server_IP, server_Port)
-    Thread.daemon = True
-    Thread.start()
+    # Make new thread for each new connection
 
-    # wait for clients to initiate connection
-    print(f"File Transfer Application running on {server_IP} : {server_Port}")
-    print("Press enter to stop...")
-    Thread.stop()
+    cThread = FTPserver(users,homeDir,serverIP,serverPort)
+    cThread.daemon = True
+    cThread.start()
 
+    # Wait for contact
+    print('FTP-Application running on', serverIP, ':', serverPort)
+    input('Enter to end...\n')
+    cThread.stop() 
+    
+    
 Start()
